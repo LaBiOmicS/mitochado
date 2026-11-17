@@ -1,66 +1,46 @@
-# Especificação Formal: mitoChado v0.2 (2026 Edition)
+# Especificação Formal: mitoChado (Edição Enxuta & Focada)
 
-O **mitoChado** é um ecossistema de banco de dados relacional e motor de dados especializado na biologia multi-ômica da mitocôndria.
+O **mitoChado** é um schema relacional e motor de dados especializado na **genômica, transcriptômica e filogenômica mitocondrial**.
 
----
-
-## 1. Por que um Chado Específico para Mitocôndrias?
-
-O Chado tradicional foi projetado para genomas nucleares lineares massivos, ignorando idiossincrasias que definem a biologia mitocondrial:
-
-| Aspecto Biológico | Limitação no Chado Tradicional | Solução Nativa no mitoChado |
-| :--- | :--- | :--- |
-| **Topologia Circular & Multipartite** | Coordenadas lineares quebram na origem do anel | Colunas `coordinates` + `spans_origin` e suporte a topologias multicírculo (plantas) |
-| **Códigos Genéticos Próprios** | Pressupõe o código universal nuclear | Suporte completo às 12+ tabelas de tradução do NCBI (1, 2, 3, 4, 5, 9, 13, 14, 16, 21-24) |
-| **Heteroplasmia Contínua** | Força genótipos mendelianos (0/0, 0/1, 1/1) | Fração alélica contínua `heteroplasmy_level` (0.0 a 1.0) com flag automático de homoplasmia |
-| **Mitotranscriptômica** | Assume transcritos monocistrônicos clássicos | Precursores policistrônicos (HSP/LSP), clivagem por tRNA punctuation model e RNA editing |
-| **Poliadenilação Formadora de Códon** | Ignora terminação formadora de códon | Suporte a códons incompletos (T/TA) completados por poliadenilação |
-| **Mitoproteoma Dual** | Não distingue proteínas codificadas no mtDNA vs importadas | Classificação estrita (`mtDNA` vs `nuclear`), complexos OXPHOS (I a V) e sinais MTS |
-| **Micropeptídeos (MDPs)** | Ignora ORFs curtos codificados dentro de rRNAs | Entidade `mdp` de 1ª classe para **Humanin**, **MOTS-c** e **SHLP1-6** |
-| **Falso-Positivo por NUMTs** | Mapeia sequências nucleares como mtDNA | Tabela `numt_locus` com coordenadas nucleares para filtragem de variantes em NGS |
-| **Mito-Epitranscriptômica** | Não modela modificações em tRNAs | Mapeamento de modificações químicas ($\tau m^5 U$, $ms^2 i^6 A$) e enzimas nucleares |
-| **Co-evolução Núcleo-Mitocondrial** | Ignora epistasia entre genomas | Pares de contato físico estrutural e montagem de **Respirasomas** |
+Ele foca exclusivamente no que define a biologia mitocondrial computacional, sem inchaço e sem tabelas desnecessárias de dados clínicos ou biofísicos.
 
 ---
 
-## 2. Dicionário de Módulos e Tabelas
+## 1. O Núcleo Mitogenômico
 
-### 2.1 `mitogenome`
-- `length`: Tamanho exato em pb (~16.5 kb em metazoários a centenas de kb em plantas).
-- `topology`: `circular_single`, `circular_multipartite`, `linear_tandem`, `linear_hairpin`, `kdna_network`, `branching_recombinant`.
-- `genetic_code_id`: FK para tabela de tradução do NCBI (1 a 24).
-- `at_skew` e `gc_skew`: Assimetria composicional do mtDNA.
+| Dimensão | O que o mitoChado resolve |
+| :--- | :--- |
+| **Topologia Circular & Origem** | Modela anéis circulares que cruzam a coordenada zero (`spans_origin`), além de genomas lineares (*Plasmodium*) e multipartites (plantas). |
+| **Códigos Genéticos NCBI** | Suporte às tabelas de tradução mitocondrial do NCBI (Tabela 1 a 24). |
+| **Sintenia e Ordem Gênica** | Ordem circular dos 37 genes canônicos (13 PCGs, 22 tRNAs, 2 rRNAs) e detecção de rearranjos filogenômicos. |
+| **Heteroplasmia Real** | Nível de heteroplasmia de variantes (`heteroplasmy_level` de 0.00 a 1.00) e cálculo automático de homoplasmia. |
+| **Mitotranscriptômica** | Precursores policistrônicos, clivagem de tRNAs (*tRNA punctuation model*) e eventos de **RNA editing** (C-para-U em plantas). |
+| **Códons Incompletos** | Modelação de terminação formadora de códon via poliadenilação pós-transcricional. |
+| **Peptídeos Mitocondriais (MDPs)** | Modelação direta de **Humanin** e **MOTS-c** como features biológicas originárias dos rRNAs. |
 
-### 2.2 `mitofeature`
-- Categorias: `pcg` (13 genes), `trna` (22 tRNAs), `rrna` (12S, 16S), `mdp`, `d_loop`.
-- `synteny_order`: Posição ordinal no anel circular (1 a 37).
-- `trna_anticodon` e `trna_secondary_structure`: Notação Dot-Bracket da estrutura em trevo.
+---
 
-### 2.3 `mitogenome_skew_profile` & `feature_codon_usage`
-- Curvas cumulativas de AT/GC-skew com detecção automática do ponto de inflexão das origens de replicação ($O_H$ e $O_L$).
-- Métricas CUB: **RSCU**, **CAI** calibrado, **ENC** (Effective Number of Codons) e frações de **pareamento Wobble**.
+## 2. Estrutura dos Schemas
 
-### 2.4 `numt_locus`
-- Segmentos homólogos de mtDNA inseridos no genoma nuclear.
-- Coordenadas nucleares (`int8range`), % de identidade de sequência e avaliação de risco de falso-positivo em NGS (`HIGH`, `MEDIUM`, `LOW`).
+```
+schema/
+├── 00_extensions.sql        # btree_gist, uuid-ossp, vector
+├── 01_taxa_and_mitogenome.sql # Organismos (TaxID), Mitogenomas (Comprimento, Topologia, Código NCBI, Skew)
+├── 02_features_and_genes.sql# 13 PCGs, 22 tRNAs (cloverleaf), 2 rRNAs, MDPs (Humanin), D-Loop e Sintenia
+├── 03_mitotranscriptomics.sql # Precursores policistrônicos, clivagem por tRNA, RNA editing (C->U) e TPM
+├── 04_mitoproteomics_and_oxphos.sql # Subunidades OXPHOS (Complexos I a V) e sequências proteicas
+├── 05_mitophylogenomics_and_variants.sql # Variantes, Heteroplasmia, Haplogrupos e Supermatrizes filogenômicas
+├── 06_seed_mitochondrial_core.sql # Seed de Códigos Genéticos NCBI (1-24) e Haplogrupos basais
+└── 07_plant_fungal_introns_trans_splicing.sql # Íntrons de Grupo I/II e trans-splicing em plantas
+```
 
-### 2.5 `mitorna_chemical_modification`
-- Catálogo de modificações epitranscriptômicas em tRNAs (posições 34, 37, 55).
-- Associação com enzimas nucleares (*MTO1*, *GTPBP3*, *NSUN3*) e patologias por deficiência (MLASA, miopatias).
+---
 
-### 2.6 `mitonuclear_interaction_pair` & `respirasome_supercomplex`
-- Interfaces de contato físico entre proteínas do mtDNA e proteínas nucleares.
-- Predição de incompatibilidade cito-nuclear em transplantes mitocondriais e MRT.
-- Estequiometria de supercomplexos ($I_1 III_2 IV_1$, $III_2 IV_2$) e sítios de ancoragem de **Cardiolipina**.
+## 3. Entidades Centrais
 
-### 2.7 `mitochondrial_derived_peptide` (MDPs)
-- Peptídeos com atividade hormonal circulante: **Humanin**, **MOTS-c**, **SHLP1-6**.
-- Receptores celulares acoplados (FPRL1, complexo CNTFR/gp130) e alvos metabólicos (AMPK, Bax).
-
-### 2.8 `cell_free_mtdna_biomarker`
-- Fragmentômica de cf-mtDNA plasmático (<100 pb).
-- Sinalização imune inata como DAMP via receptores **TLR9** e inflamassomo **NLRP3**.
-
-### 2.9 `dna_barcode_marker`
-- Fragmentos canônicos de 658 pb do **COI (Folmer Region)** para o consórcio global BOLD.
-- Marcadores de Citocromo b (*Cytb*) para taxonomia e rastreamento de fraudes biológicas.
+1. **`mitogenome`**: Montagem mitocondrial, comprimento, topologia (`circular_single`, `circular_multipartite`, `linear_tandem`), código genético, %GC e AT/GC skew.
+2. **`mitofeature`**: Genes, tRNAs (com anticódon e estrutura secundária), rRNAs, MDPs (Humanin, MOTS-c), códons de início/fim e ordem de sintenia.
+3. **`mitochondrial_variant`**: Posição, alelos de referência e mutante, nível de heteroplasmia (0.00 a 1.00) e significância funcional.
+4. **`mitorna_editing`**: Edição de RNA pós-transcricional (frequência, tipo de conversão).
+5. **`mitogenome_gene_order`**: Ordem gênica serializada e distância de quebra (*breakpoint distance*).
+6. **`mitoprotein`**: Subunidades de OXPHOS (Complexos I a V).

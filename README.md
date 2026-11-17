@@ -1,16 +1,15 @@
-# mitoChado: The Mitochondrial Multi-Omics Database Engine
+# mitoChado: The Mitochondrial Genomics Database Engine
 
-**mitoChado** é um schema relacional e motor de dados especializado em **mitogenômica, mitotranscriptômica, mitoproteômica e mitofilogenômica** para PostgreSQL (16/17+) com suporte a vetores (`pgvector`).
+**mitoChado** é um schema relacional e motor de dados especializado em **genômica, transcriptômica e filogenômica mitocondrial** para PostgreSQL (16/17+) com suporte a vetores (`pgvector`).
 
-Enquanto genomas nucleares lidam com dezenas de cromossomos lineares de bilhões de pares de bases, a biologia mitocondrial possui particularidades únicas que são distorcidas quando forçadas em schemas genéricos como o Chado tradicional:
+Ele foca no que realmente importa na biologia computacional de mitocôndrias, eliminando o inchaço do Chado tradicional e tratando com precisão matemática as peculiaridades do mtDNA:
 - **Genomas circulares compactos** (~16.5 kb em animais) e coordenadas que atravessam a origem;
-- **Códigos genéticos mitocondriais próprios** (Tabelas NCBI 2, 5, 9, 14...) com códons de início/parada não-canônicos;
-- **Sintenia e Ordem Gênica canônica** (13 PCGs, 22 tRNAs, 2 rRNAs) crucial para filogenômica de metazoários;
-- **Mitotranscriptômica e Modelo de Pontuação por tRNA**: Clivagem de precursores policistrônicos gigantes por RNase P e ELAC2;
-- **Poliadenilação formadora de códon de parada** (códons incompletos T/TA terminados em TAA via poly-A);
-- **Peptídeos Derivados de Mitocôndria (MDPs)** como **Humanin**, MOTS-c e SHLPs codificados em pequenos ORFs alternativos;
-- **Origem Genética Dual do Mitoproteoma**: 13 proteínas de origem mtDNA vs ~1500 nucleares importadas via sinal de endereçamento mitocondrial (MTS);
-- **Heteroplasmia** e quantificação de frações alélicas patogênicas (MELAS, MERRF, LHON).
+- **Códigos genéticos mitocondriais do NCBI** (Tabelas 1 a 24) com códons de início/parada específicos de cada táxon;
+- **Sintenia e Ordem Gênica** (13 PCGs, 22 tRNAs, 2 rRNAs) essencial para mitofilogenômica;
+- **Mitotranscriptômica Real**: Precursores policistrônicos, clivagem por tRNA (*tRNA punctuation model*) e **RNA editing** (C-para-U em plantas);
+- **Poliadenilação formadora de códon** (códons incompletos T/TA terminados em TAA via poly-A);
+- **Peptídeos Derivados de Mitocôndria (MDPs)** como **Humanin** e **MOTS-c**;
+- **Heteroplasmia Contínua** (fração de 0.00 a 1.00 com detecção automática de homoplasmia).
 
 ---
 
@@ -22,18 +21,19 @@ mitoChado/
 │   └── docker-compose.yml       # PostgreSQL 17 + pgvector na porta 5433
 ├── schema/
 │   ├── 00_extensions.sql        # btree_gist, uuid-ossp, vector
-│   ├── 01_taxa_and_mitogenome.sql # Organismos, Códigos Genéticos NCBI e MtDNA
-│   ├── 02_features_and_genes.sql# 13 PCGs, 22 tRNAs, 2 rRNAs, MDPs (Humanin), D-Loop
-│   ├── 03_mitotranscriptomics.sql # Precursores policistrônicos, clivagem, RNA editing, expressão
-│   ├── 04_mitoproteomics_and_oxphos.sql # Complexos I-V, origem dual, MTS, PTMs, vetores IA
-│   ├── 05_mitophylogenomics_and_variants.sql # Haplogrupos, Heteroplasmia e Rearranjos de Sintenia
-│   └── 06_seed_mitochondrial_core.sql # Seed de Códigos Genéticos NCBI e Haplogrupos canônicos
+│   ├── 01_taxa_and_mitogenome.sql # Organismos, Códigos Genéticos NCBI, Mitogenomas e Skew
+│   ├── 02_features_and_genes.sql# 13 PCGs, 22 tRNAs, 2 rRNAs, MDPs (Humanin), D-Loop e Sintenia
+│   ├── 03_mitotranscriptomics.sql # Precursores policistrônicos, clivagem por tRNA, RNA editing e TPM
+│   ├── 04_mitoproteomics_and_oxphos.sql # Mapeamento de subunidades OXPHOS (Complexos I a V)
+│   ├── 05_mitophylogenomics_and_variants.sql # Variantes, Heteroplasmia, Haplogrupos e Supermatrizes
+│   ├── 06_seed_mitochondrial_core.sql # Seed de Códigos Genéticos NCBI (1-24) e Haplogrupos
+│   └── 07_plant_fungal_introns_trans_splicing.sql # Íntrons catalíticos e trans-splicing em plantas
 ├── src/mitochado/
 │   ├── cli.py                   # Interface de linha de comando (`mitochado`)
 │   ├── db.py                    # Conexão e execução de migrações
 │   └── loaders/                 # Parsers e ingestores mitocondriais
 ├── docs/
-│   └── SPECIFICATION.md         # Especificação formal detalhada
+│   └── SPECIFICATION.md         # Especificação formal enxuta
 └── pyproject.toml
 ```
 
@@ -69,5 +69,7 @@ mitochado add-mitogenome \
   --accession "NC_012920.1" \
   --name "rCRS (Homo sapiens revised Cambridge Reference Sequence)" \
   --length 16569 \
-  --code-id 2
+  --code-id 2 \
+  --topology circular_single \
+  --clade Metazoa
 ```
