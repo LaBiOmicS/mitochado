@@ -1,5 +1,6 @@
 """mitoChado Command-Line Interface (CLI)."""
 
+import json
 from pathlib import Path
 from typing import Optional
 import typer
@@ -7,6 +8,8 @@ from rich.console import Console
 from rich.table import Table
 
 from mitochado.db import DEFAULT_MITO_PG_URL, execute_schema_files, get_connection
+from mitochado.loaders.genbank import parse_genbank_mitogenome
+from mitochado.loaders.fasta import parse_mitogenome_fasta
 
 app = typer.Typer(
     name="mitochado",
@@ -156,6 +159,87 @@ def add_variant(
 
     homo_tag = "[cyan]Homoplásmica[/cyan]" if is_homo else f"[magenta]Heteroplásmica ({heteroplasmy*100:.1f}%)[/magenta]"
     console.print(f"[bold green]✓ Variante registrada com ID {var_id}:[/bold green] {hgvs} ({homo_tag}) - {significance}")
+
+@app.command()
+def load_gbk(
+    gbk_path: Path = typer.Argument(..., help="Path to GenBank file (.gbk, .gb)"),
+    db_url: str = typer.Option(DEFAULT_MITO_PG_URL, "--db-url", "-d"),
+):
+    """Parses a GenBank file with BioPython and loads the organism, mitogenome, and all 37 features."""
+    console.print(f"[bold cyan]Lendo arquivo GenBank mitocondrial:[/bold cyan] {gbk_path}")
+    data = parse_genbank_mitogenome(gbk_path)
+    
+    org = data["organism"]
+    mito = data["mitogenome"]
+    feats = data["features"]
+    
+    with get_connection(db_url) as conn:
+        with conn.cursor() as cur:
+            # 1. Registra ou atualiza organismo
+            cur.execute(
+                """
+                INSERT INTO organism (tax_id, scientific_name, lineage)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tax_id) DO UPDATE SET scientific_name = EXCLUDED.scientific_name
+                RETURNING tax_id;
+                """,
+                (org["tax_id"], org["scientific_name"], org["lineage"]),
+            )
+            tax_id = cur.fetchone()["tax_id"]
+            
+            # 2. Registra o mitogenoma completo com métricas
+            d_loop_range = None
+            if mito["d_loop_coords"]:
+                d_loop_range = f"[{mito['d_loop_coords'][0]},{mito['d_loop_coords'][1]})"
+                
+            cur.execute(
+                """
+                INSERT INTO mitogenome (
+                    tax_id, accession, name, length, topology, genetic_code_id,
+                    gc_content, at_skew, gc_skew, raw_sequence, d_loop_coordinates
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s::int8range
+                )
+                ON CONFLICT (accession) DO UPDATE SET
+                    name = EXCLUDED.name, length = EXCLUDED.length,
+                    gc_content = EXCLUDED.gc_content, at_skew = EXCLUDED.at_skew, gc_skew = EXCLUDED.gc_skew
+                RETURNING id;
+                """,
+                (
+                    tax_id, mito["accession"], mito["name"], mito["length"], mito["topology"],
+                    mito["genetic_code_id"], mito["gc_content"], mito["at_skew"], mito["gc_skew"],
+                    mito["raw_sequence"], d_loop_range
+                ),
+            )
+            mitogenome_id = cur.fetchone()["id"]
+            
+            # 3. Insere todas as features (13 PCGs, 22 tRNAs, rRNAs, D-Loop)
+            cur.execute("DELETE FROM mitofeature WHERE mitogenome_id = %s;", (mitogenome_id,))
+            
+            for f in feats:
+                cur.execute(
+                    """
+                    INSERT INTO mitofeature (
+                        mitogenome_id, category, gene_symbol, coordinates, strand,
+                        synteny_order, protein_sequence, trna_amino_acid, trna_anticodon, metadata
+                    ) VALUES (
+                        %s, %s, %s, int8range(%s, %s, '[)'), %s,
+                        %s, %s, %s, %s, %s::jsonb
+                    );
+                    """,
+                    (
+                        mitogenome_id, f["category"], f["gene_symbol"], f["start"], f["end"], f["strand"],
+                        f["synteny_order"], f["protein_sequence"], f["trna_amino_acid"], f["trna_anticodon"],
+                        json.dumps(f["attributes"])
+                    ),
+                )
+            conn.commit()
+
+    console.print(f"[bold green]✓ Sucesso![/bold green] Mitogenoma [bold cyan]{mito['accession']}[/bold cyan] carregado!")
+    console.print(f"  • [green]Espécie:[/green] {org['scientific_name']} (TaxID: {tax_id})")
+    console.print(f"  • [green]Comprimento:[/green] {mito['length']} pb | [green]%GC:[/green] {mito['gc_content']}% | [green]AT-skew:[/green] {mito['at_skew']} | [green]GC-skew:[/green] {mito['gc_skew']}")
+    console.print(f"  • [green]Features anotadas:[/green] {len(feats)} (ordenadas por sintenia)")
 
 if __name__ == "__main__":
     app()

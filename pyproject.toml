@@ -5,6 +5,7 @@ description = "A specialized PostgreSQL database engine for Mitogenomics, Mitotr
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "biopython>=1.88",
     "psycopg[binary]>=3.2.0",
     "pydantic>=2.7.0",
     "rich>=13.7.0",
