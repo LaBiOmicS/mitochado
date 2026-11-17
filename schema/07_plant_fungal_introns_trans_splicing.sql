@@ -1,39 +1,19 @@
 -- ============================================================================
--- mitoChado (Draft): 07_future_kingdoms_introns_trans_splicing.sql
+-- mitoChado: 07_plant_fungal_introns_trans_splicing.sql
 -- Íntrons Mitocondriais (Grupo I e II), Trans-Splicing em Plantas
 -- e Redes de kDNA em Kinetoplastídeos (Trypanosoma)
 -- ============================================================================
 
--- 1. Tipos de Topologias Mitocondriais na Árvore da Vida
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'mitochondrial_topology_type') THEN
-        CREATE TYPE mitochondrial_topology_type AS ENUM (
-            'circular_single',         -- Metazoa padrão (~16.5 kb único anel)
-            'circular_multipartite',    -- Plantas com múltiplos subcírculos recombinantes / piolhos
-            'linear_tandem',           -- Apicomplexa / Plasmodium (~6 kb repetições em tandem)
-            'linear_hairpin',          -- Ciliados (Paramecium, Tetrahymena) com telômeros em grampo
-            'kdna_network',            -- Kinetoplastida (Trypanosoma, Leishmania) maxicírculos e minicírculos
-            'branching_recombinant'    -- Plantas vasculares (Silene) com formas dinâmicas ramificadas
-        );
-    END IF;
-END$$;
+-- 1. Tipos de Íntrons Mitocondriais Catalíticos
+CREATE TYPE mitointron_type AS ENUM (
+    'group_I',               -- Ribozima auto-catalítica com guanosina cofator
+    'group_II',              -- Precursor evolucionário dos íntrons spliceossomais (estrutura lariat)
+    'group_II_twintron',     -- Íntron dentro de íntron
+    'archaeal_like'          -- Íntrons atípicos em alguns protozoários
+);
 
--- 2. Tipos de Íntrons Mitocondriais Catalíticos
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'mitointron_type') THEN
-        CREATE TYPE mitointron_type AS ENUM (
-            'group_I',               -- Ribozima auto-catalítica com guanosina cofator
-            'group_II',              -- Precursor evolucionário dos íntrons spliceossomais (estrutura lariat)
-            'group_II_twintron',     -- Íntron dentro de íntron
-            'archaeal_like'          -- Íntrons atípicos em alguns protozoários
-        );
-    END IF;
-END$$;
-
--- 3. Tabela de Íntrons Mitocondriais (Plantas e Fungos)
-CREATE TABLE IF NOT EXISTS mitointron (
+-- 2. Tabela de Íntrons Mitocondriais (Plantas e Fungos)
+CREATE TABLE mitointron (
     id BIGSERIAL PRIMARY KEY,
     mitogenome_id INT NOT NULL REFERENCES mitogenome(id) ON DELETE CASCADE,
     host_gene_id BIGINT NOT NULL REFERENCES mitofeature(id) ON DELETE CASCADE,
@@ -54,12 +34,12 @@ CREATE TABLE IF NOT EXISTS mitointron (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
-CREATE INDEX IF NOT EXISTS idx_mitointron_host ON mitointron (host_gene_id);
-CREATE INDEX IF NOT EXISTS idx_mitointron_type ON mitointron (intron_type);
-CREATE INDEX IF NOT EXISTS idx_mitointron_trans ON mitointron (is_trans_spliced);
+CREATE INDEX idx_mitointron_host ON mitointron (host_gene_id);
+CREATE INDEX idx_mitointron_type ON mitointron (intron_type);
+CREATE INDEX idx_mitointron_trans ON mitointron (is_trans_spliced);
 
--- 4. Junções de Trans-Splicing Mitocondrial (Plantas - Viridiplantae)
-CREATE TABLE IF NOT EXISTS mitochondrial_trans_splicing_junction (
+-- 3. Junções de Trans-Splicing Mitocondrial (Plantas - Viridiplantae)
+CREATE TABLE mitochondrial_trans_splicing_junction (
     id BIGSERIAL PRIMARY KEY,
     mitogenome_id INT NOT NULL REFERENCES mitogenome(id) ON DELETE CASCADE,
     upstream_exon_feature_id BIGINT NOT NULL REFERENCES mitofeature(id),
@@ -71,8 +51,8 @@ CREATE TABLE IF NOT EXISTS mitochondrial_trans_splicing_junction (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
--- 5. Biblioteca de Minicírculos e gRNAs de kDNA (Kinetoplastida: Trypanosoma / Leishmania)
-CREATE TABLE IF NOT EXISTS kdna_minicircle_library (
+-- 4. Biblioteca de Minicírculos e gRNAs de kDNA (Kinetoplastida: Trypanosoma / Leishmania)
+CREATE TABLE kdna_minicircle_library (
     id BIGSERIAL PRIMARY KEY,
     tax_id INT NOT NULL REFERENCES organism(tax_id) ON DELETE CASCADE,
     minicircle_class TEXT NOT NULL,              -- Classe ou contig do minicírculo (~1 kb)
@@ -86,4 +66,4 @@ CREATE TABLE IF NOT EXISTS kdna_minicircle_library (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
-CREATE INDEX IF NOT EXISTS idx_kdna_target ON kdna_minicircle_library (tax_id, target_maxicircle_gene);
+CREATE INDEX idx_kdna_target ON kdna_minicircle_library (tax_id, target_maxicircle_gene);

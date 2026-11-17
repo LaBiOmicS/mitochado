@@ -48,42 +48,44 @@ def init_db(
 
 @app.command()
 def add_mitogenome(
-    tax_id: int = typer.Option(..., "--taxid", "-t", help="NCBI TaxID (e.g., 9606)"),
-    scientific_name: str = typer.Option(..., "--scientific-name", "-s", help="Scientific Name (e.g., 'Homo sapiens')"),
-    accession: str = typer.Option(..., "--accession", "-a", help="GenBank/RefSeq accession (e.g., 'NC_012920.1')"),
+    tax_id: int = typer.Option(..., "--taxid", "-t", help="NCBI TaxID (e.g., 9606, 3702 for Arabidopsis)"),
+    scientific_name: str = typer.Option(..., "--scientific-name", "-s", help="Scientific Name (e.g., 'Homo sapiens', 'Arabidopsis thaliana')"),
+    accession: str = typer.Option(..., "--accession", "-a", help="GenBank/RefSeq accession (e.g., 'NC_012920.1', 'NC_001284.2')"),
     name: str = typer.Option(..., "--name", "-n", help="Mitogenome description/name"),
-    length: int = typer.Option(..., "--length", "-l", help="Length in base pairs (e.g., 16569)"),
-    code_id: int = typer.Option(2, "--code-id", "-c", help="NCBI translation table (2 for Vertebrate Mt, 5 for Invertebrate)"),
-    is_circular: bool = typer.Option(True, "--circular/--linear"),
+    length: int = typer.Option(..., "--length", "-l", help="Length in base pairs"),
+    code_id: int = typer.Option(2, "--code-id", "-c", help="NCBI translation table (1: Plants, 2: Vertebrates, 3: Yeast, 4: Mold/Protozoa, 5: Invertebrates)"),
+    topology: str = typer.Option("circular_single", "--topology", help="Topology: circular_single, circular_multipartite, linear_tandem, linear_hairpin, kdna_network"),
+    clade: str = typer.Option("Metazoa", "--clade", help="Clade: Metazoa, Viridiplantae, Fungi, Alveolata, Euglenozoa"),
     is_canonical: bool = typer.Option(True, "--canonical/--non-canonical"),
     db_url: str = typer.Option(DEFAULT_MITO_PG_URL, "--db-url", "-d"),
 ):
-    """Registers an organism and its mitochondrial genome."""
+    """Registers an organism and its mitochondrial genome with specific topology and genetic code."""
     with get_connection(db_url) as conn:
         with conn.cursor() as cur:
-            # 1. Garante o organismo
+            # 1. Garante o organismo com seu clado
             cur.execute(
                 """
-                INSERT INTO organism (tax_id, scientific_name)
-                VALUES (%s, %s)
-                ON CONFLICT (tax_id) DO UPDATE SET scientific_name = EXCLUDED.scientific_name;
+                INSERT INTO organism (tax_id, scientific_name, clade)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tax_id) DO UPDATE SET scientific_name = EXCLUDED.scientific_name, clade = EXCLUDED.clade;
                 """,
-                (tax_id, scientific_name),
+                (tax_id, scientific_name, clade),
             )
-            # 2. Insere o mitogenoma
+            # 2. Insere o mitogenoma com a topologia exata
             cur.execute(
                 """
                 INSERT INTO mitogenome (
-                    tax_id, accession, name, length, is_circular, genetic_code_id, is_canonical_reference
+                    tax_id, accession, name, length, topology, genetic_code_id, is_canonical_reference
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
                 """,
-                (tax_id, accession, name, length, is_circular, code_id, is_canonical),
+                (tax_id, accession, name, length, topology, code_id, is_canonical),
             )
             mito_id = cur.fetchone()["id"]
             conn.commit()
 
     console.print(f"[bold green]✓ Mitogenoma registrado com ID {mito_id}:[/bold green] {accession} ({scientific_name})")
+    console.print(f"  [cyan]Clado:[/cyan] {clade} | [cyan]Topologia:[/cyan] {topology} | [cyan]Código NCBI:[/cyan] {code_id}")
 
 @app.command()
 def list_mitogenomes(db_url: str = typer.Option(DEFAULT_MITO_PG_URL, "--db-url", "-d")):
